@@ -1,0 +1,26 @@
+template_name,code
+Hello World,"print('Hello, World!')"
+Basic Function,"
+def my_function(param1, param2):
+    result = param1 + param2
+    return result
+"
+Class Definition,"
+class MyClass:
+    def __init__(self, name):
+        self.name = name
+        
+    def greet(self):
+        print(f'Hello, {self.name}!')
+"
+Loop Example,"
+for i in range(5):
+    print(i)
+"
+If-Else Statement,"
+x = 10
+if x > 5:
+    print('x is greater than 5')
+else:
+    print('x is less than or equal to 5')
+"

@@ -1,0 +1,220 @@
+ 
+~~~~~Data collection~~~~~
+import requests
+from bs4 import BeautifulSoup
+
+def fetch_code_snippets(repo_url):
+    response = requests.get(repo_url)
+    if response.status_code == 200:
+        soup = BeautifulSoup(response.content, 'html.parser')
+        code_snippets = []
+        for code_tag in soup.find_all('code'):
+            code_snippet = code_tag.get_text()
+            if code_snippet.strip():
+                code_snippets.append(code_snippet.strip())
+        return code_snippets
+    else:
+        raise Exception(f'Failed to fetch code snippets from {repo_url}')
+
+repo_url = 'https://github.com/example/repo'
+code_snippets = fetch_code_snippets(repo_url)
+print(f'Fetched {len(code_snippets)} code snippets.')
+
+~~~~~Data preprocessing~~~~~~
+
+from torchtext.data.utils import get_tokenizer
+
+def tokenize_code(code_snippet):
+    tokenizer = get_tokenizer('basic_english')
+    tokens = tokenizer(code_snippet)
+    return tokens
+
+def preprocess_data(code_snippets):
+    tokenized_snippets = [tokenize_code(snippet) for snippet in code_snippets]
+    all_tokens = [token for snippet in tokenized_snippets for token in snippet]
+    unique_tokens = list(set(all_tokens))
+    token_to_idx = {token: idx for idx, token in enumerate(unique_tokens)}
+    idx_to_token = {idx: token for token, idx in token_to_idx.items()}
+    return tokenized_snippets, token_to_idx, idx_to_token
+
+tokenized_snippets, token_to_idx, idx_to_token = preprocess_data(code_snippets)
+print(f'Total unique tokens: {len(token_to_idx)}')
+
+
+
+~~~~~~Data Augmentation…~~~~~~~~~~
+
+import numpy as np
+
+def augment_data(tokenized_snippets, token_to_idx):
+    augmented_snippets = []
+    for snippet in tokenized_snippets:
+        # Random Insertion
+        if np.random.rand() < 0.1:
+            insertion_index = np.random.randint(0, len(snippet) + 1)
+            inserted_token = np.random.choice(list(token_to_idx.keys()))
+            snippet.insert(insertion_index, inserted_token)
+        # Random Deletion
+        if np.random.rand() < 0.1 and len(snippet) > 1:
+            deletion_index = np.random.randint(0, len(snippet))
+            del snippet[deletion_index]
+        # Random Swap
+        if np.random.rand() < 0.1 and len(snippet) > 1:
+            swap_index1, swap_index2 = np.random.choice(len(snippet), 2, replace=False)
+            snippet[swap_index1], snippet[swap_index2] = snippet[swap_index2], snippet[swap_index1]
+        augmented_snippets.append(snippet)
+    return augmented_snippets
+
+augmented_snippets = augment_data(tokenized_snippets, token_to_idx)
+
+ ~~~~~~~~~~model architecture~~~~~~~~
+
+import torch.nn as nn
+
+class DiffusionModel(nn.Module):
+    def __init__(self, vocab_size, embedding_dim, hidden_dim):
+        super(DiffusionModel, self).__init__()
+        self.embedding = nn.Embedding(vocab_size, embedding_dim)
+        # In a full diffusion model, replace the LSTM with a Transformer-based denoiser that accepts time-step conditioning
+        self.lstm = nn.LSTM(embedding_dim, hidden_dim, batch_first=True)
+        self.fc = nn.Linear(hidden_dim, vocab_size)
+
+    def forward(self, x):
+        x = self.embedding(x)
+        x, _ = self.lstm(x)
+        x = self.fc(x)
+        return x
+
+vocab_size = len(token_to_idx)
+embedding_dim = 256
+hidden_dim = 512
+learning_rate = 0.001
+
+model = DiffusionModel(vocab_size, embedding_dim, hidden_dim)
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+
+
+~~~~~~~~~~~~~data preparation~~~~~~~~~~~~~~~
+
+from torch.utils.data import Dataset, DataLoader
+from sklearn.model_selection import train_test_split
+
+class CodeDataset(Dataset):
+    def __init__(self, tokenized_snippets, token_to_idx, seq_length=100):
+        self.tokenized_snippets = tokenized_snippets
+        self.token_to_idx = token_to_idx
+        self.seq_length = seq_length
+    def __len__(self):
+        return len(self.tokenized_snippets)
+    def __getitem__(self, idx):
+        snippet = self.tokenized_snippets[idx]
+        input_seq = snippet[:self.seq_length]
+        target_seq = snippet[1:self.seq_length+1]
+        input_seq = [self.token_to_idx[token] for token in input_seq]
+        target_seq = [self.token_to_idx[token] for token in target_seq]
+        return torch.tensor(input_seq), torch.tensor(target_seq)
+
+seq_length = 100
+batch_size = 32
+
+dataset = CodeDataset(augmented_snippets, token_to_idx, seq_length)
+train_dataset, val_dataset = train_test_split(dataset, test_size=0.2, random_state=42)
+train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+
+
+
+~~~~~~~~~~~~~training~~~~~~~~~
+
+num_epochs = 10
+scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
+
+for epoch in range(num_epochs):
+    model.train()
+    total_loss = 0
+    for inputs, targets in train_loader:
+        optimizer.zero_grad()
+        outputs = model(inputs)
+        loss = criterion(outputs.view(-1, vocab_size), targets.view(-1))
+        loss.backward()
+        optimizer.step()
+        total_loss += loss.item()
+    scheduler.step()
+    avg_loss = total_loss / len(train_loader)
+    print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {avg_loss}')
+
+~~~~~~~~~~~~evaluation~~~~~~~~~
+
+model.eval()
+total_loss = 0
+with torch.no_grad():
+    for inputs, targets in val_loader:
+        outputs = model(inputs)
+        loss = criterion(outputs.view(-1, vocab_size), targets.view(-1))
+        total_loss += loss.item()
+
+val_loss = total_loss / len(val_loader)
+print(f'Validation Loss: {val_loss}')
+
+
+~~~~~~~~~~inference~~~~~~~~
+
+
+def generate_code(model, prompt, max_length=100):
+    model.eval()
+    input_seq = [token_to_idx[token] for token in tokenize_code(prompt)]
+    input_seq = torch.tensor(input_seq).unsqueeze(0)
+    generated_code = []
+    with torch.no_grad():
+        for _ in range(max_length):
+            outputs = model(input_seq)
+            _, predicted = torch.max(outputs[:, -1, :], 1)
+            generated_code.append(idx_to_token[predicted.item()])
+            input_seq = torch.cat([input_seq, predicted.unsqueeze(0)], dim=1)
+    return ' '.join(generated_code)
+
+prompt = 'def hello_world():'
+generated_code = generate_code(model, prompt)
+print(generated_code)
+
+
+
+~~~~~~~~~~model saving and loading~~~~~~~~
+
+def save_model(model, path):
+    torch.save(model.state_dict(), path)
+
+def load_model(model, path):
+    model.load_state_dict(torch.load(path))
+    model.eval()
+
+model_path = 'diffusion_model.pth'
+save_model(model, model_path)
+load_model(model, model_path)
+
+
+
+~~~~~~~~~error training and logging~~~~~~~~
+
+import logging
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+try:
+    for epoch in range(num_epochs):
+        model.train()
+        total_loss = 0
+        for inputs, targets in train_loader:
+            optimizer.zero_grad()
+            outputs = model(inputs)
+            loss = criterion(outputs.view(-1, vocab_size), targets.view(-1))
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+        scheduler.step()
+        avg_loss = total_loss / len(train_loader)
+        logging.info(f'Epoch [{epoch+1}/{num_epochs}], Loss: {avg_loss}')
+except Exception as e:
+    logging.error(f'An error occurred: {e}')
+

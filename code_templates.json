@@ -1,0 +1,22 @@
+[
+    {
+        "template_name": "Hello World",
+        "code": "print('Hello, World!')"
+    },
+    {
+        "template_name": "Basic Function",
+        "code": "\ndef my_function(param1, param2):\n    result = param1 + param2\n    return result\n"
+    },
+    {
+        "template_name": "Class Definition",
+        "code": "\nclass MyClass:\n    def __init__(self, name):\n        self.name = name\n        \n    def greet(self):\n        print(f'Hello, {self.name}!')\n"
+    },
+    {
+        "template_name": "Loop Example",
+        "code": "\nfor i in range(5):\n    print(i)\n"
+    },
+    {
+        "template_name": "If-Else Statement",
+        "code": "\nx = 10\nif x > 5:\n    print('x is greater than 5')\nelse:\n    print('x is less than or equal to 5')\n"
+    }
+]
